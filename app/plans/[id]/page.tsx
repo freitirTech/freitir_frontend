@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { use, useEffect, useRef, useState } from "react";
-import { fetchPlanGaps, uploadExecution, type PlanWithGaps, type StopWithGap, type TourWithGaps } from "@/lib/api";
+import { fetchPlanGaps, runSimulation, uploadExecution, type PlanWithGaps, type StopWithGap, type TourWithGaps } from "@/lib/api";
 
 export default function PlanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [plan, setPlan] = useState<PlanWithGaps | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [showSimModal, setShowSimModal] = useState(false);
+  const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -23,6 +25,20 @@ export default function PlanPage({ params }: { params: Promise<{ id: string }> }
   }
 
   useEffect(() => { loadPlan(); }, [id]);
+
+  async function handleSimulate(scenario: "on_time" | "delayed" | "disrupted") {
+    setShowSimModal(false);
+    setSimulating(true);
+    setError("");
+    try {
+      await runSimulation(id, scenario);
+      await loadPlan();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Simulation failed.");
+    } finally {
+      setSimulating(false);
+    }
+  }
 
   async function handleExecutionUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -63,10 +79,20 @@ export default function PlanPage({ params }: { params: Promise<{ id: string }> }
             <p className="mt-1 text-sm text-slate-500">{plan.tours.length} tours · uploaded {new Date(plan.uploaded_at).toLocaleDateString()}</p>
           </div>
 
-          <label className={`cursor-pointer rounded-xl px-4 py-2 text-sm font-medium text-white transition-colors ${uploading ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 hover:bg-slate-700"}`}>
-            {uploading ? "Uploading…" : "Upload Execution"}
-            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleExecutionUpload} disabled={uploading} />
-          </label>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowSimModal(true)}
+              disabled={simulating || uploading}
+              className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${simulating ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed" : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+            >
+              {simulating ? "Simulating…" : "Simulate"}
+            </button>
+
+            <label className={`cursor-pointer rounded-xl px-4 py-2 text-sm font-medium text-white transition-colors ${uploading ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 hover:bg-slate-700"}`}>
+              {uploading ? "Uploading…" : "Upload Execution"}
+              <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleExecutionUpload} disabled={uploading} />
+            </label>
+          </div>
         </div>
 
         {error && (
@@ -85,6 +111,13 @@ export default function PlanPage({ params }: { params: Promise<{ id: string }> }
           {plan.tours.map((tour) => <TourCard key={tour.db_tour_id} tour={tour} />)}
         </div>
       </div>
+
+      {showSimModal && (
+        <SimulatorModal
+          onSelect={handleSimulate}
+          onClose={() => setShowSimModal(false)}
+        />
+      )}
     </main>
   );
 }
@@ -173,6 +206,70 @@ function Badge({ text, variant }: { text: string; variant: "red" | "amber" | "gr
     slate: "bg-slate-50 text-slate-700 border-slate-200",
   };
   return <span className={`rounded-full border px-3 py-1 text-xs font-medium ${styles[variant]}`}>{text}</span>;
+}
+
+type Scenario = "on_time" | "delayed" | "disrupted";
+
+const SCENARIOS: { id: Scenario; label: string; description: string; color: string }[] = [
+  {
+    id: "on_time",
+    label: "On time",
+    description: "Minor variation ±5 min. No meaningful delays. Good for building a baseline.",
+    color: "border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800",
+  },
+  {
+    id: "delayed",
+    label: "Delayed",
+    description: "20–45 min base delay cascading across stops. Models a slow-traffic or overloaded day.",
+    color: "border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800",
+  },
+  {
+    id: "disrupted",
+    label: "Disrupted",
+    description: "1–2 random stop failures + moderate delays. Models a bad day: access denied, customer absent.",
+    color: "border-red-200 bg-red-50 hover:bg-red-100 text-red-800",
+  },
+];
+
+function SimulatorModal({
+  onSelect,
+  onClose,
+}: {
+  onSelect: (scenario: Scenario) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Simulate execution</h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Generate synthetic TMS events for this plan. Gaps, patterns, and risk scores will update.
+            </p>
+          </div>
+          <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          {SCENARIOS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => onSelect(s.id)}
+              className={`w-full rounded-xl border p-4 text-left transition-colors ${s.color}`}
+            >
+              <p className="font-semibold">{s.label}</p>
+              <p className="mt-0.5 text-sm opacity-80">{s.description}</p>
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs text-slate-400">
+          Based on Samsara RouteStop event schema. Each run generates fresh random variation within the scenario bounds.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function formatTime(iso: string): string {

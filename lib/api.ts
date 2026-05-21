@@ -138,6 +138,30 @@ export async function fetchPatterns(): Promise<Pattern[]> {
   return res.json();
 }
 
+export type SimulatorResult = {
+  plan_id: string;
+  scenario: string;
+  events_generated: number;
+  stop_gaps_computed: number;
+  tour_gaps_computed: number;
+};
+
+export async function runSimulation(
+  planId: string,
+  scenario: "on_time" | "delayed" | "disrupted",
+): Promise<SimulatorResult> {
+  const res = await fetch(`${API_URL}/simulator/run`, {
+    method: "POST",
+    headers: { ...(await authHeaders()), "Content-Type": "application/json" },
+    body: JSON.stringify({ plan_id: planId, scenario }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail ?? "Simulation failed");
+  }
+  return res.json();
+}
+
 export async function uploadExecution(planId: string, file: File) {
   const form = new FormData();
   form.append("file", file);
