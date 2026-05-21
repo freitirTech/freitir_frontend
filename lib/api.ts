@@ -12,8 +12,18 @@ export type PlanSummary = {
   id: string;
   filename: string;
   uploaded_at: string;
+  plan_date: string | null;
   tour_count: number;
   has_execution: boolean;
+};
+
+export type WeeklyTrend = {
+  plan_date: string;
+  tours_run: number;
+  total_delay_minutes: number;
+  failed_stops: number;
+  total_stops: number;
+  revenue_lost_eur: number;
 };
 
 export type StopGap = {
@@ -63,9 +73,10 @@ export async function fetchPlanGaps(planId: string): Promise<PlanWithGaps> {
   return res.json();
 }
 
-export async function uploadPlan(file: File): Promise<{ db_plan_id: string }> {
+export async function uploadPlan(file: File, planDate?: string): Promise<{ db_plan_id: string }> {
   const form = new FormData();
   form.append("file", file);
+  if (planDate) form.append("plan_date", planDate);
   const res = await fetch(`${API_URL}/plans/canonical`, {
     method: "POST",
     headers: await authHeaders(),
@@ -75,6 +86,12 @@ export async function uploadPlan(file: File): Promise<{ db_plan_id: string }> {
     const err = await res.json();
     throw new Error(err.detail ?? "Upload failed");
   }
+  return res.json();
+}
+
+export async function fetchWeeklyTrends(): Promise<WeeklyTrend[]> {
+  const res = await fetch(`${API_URL}/analytics/weekly`, { headers: await authHeaders() });
+  if (!res.ok) throw new Error("Failed to fetch weekly trends");
   return res.json();
 }
 

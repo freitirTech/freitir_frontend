@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { fetchAnalyticsSummary, fetchPatterns, type AnalyticsSummary, type Pattern } from "@/lib/api";
+import { fetchAnalyticsSummary, fetchPatterns, fetchWeeklyTrends, type AnalyticsSummary, type Pattern, type WeeklyTrend } from "@/lib/api";
 
 export default function AnalyticsPage() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
+  const [weekly, setWeekly] = useState<WeeklyTrend[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
       try {
-        const [s, p] = await Promise.all([fetchAnalyticsSummary(), fetchPatterns()]);
+        const [s, p, w] = await Promise.all([fetchAnalyticsSummary(), fetchPatterns(), fetchWeeklyTrends()]);
         setSummary(s);
         setPatterns(p);
+        setWeekly(w);
       } catch {
         setError("Could not load analytics.");
       } finally {
@@ -61,6 +63,51 @@ export default function AnalyticsPage() {
               </section>
             )}
           </>
+        )}
+
+        {weekly.length > 0 && (
+          <section className="mb-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-6 py-4">
+              <h2 className="text-base font-semibold text-slate-900">Week by week</h2>
+              <p className="mt-0.5 text-xs text-slate-400">One row per plan date · revenue = delay × €80/hr</p>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+                  <th className="px-6 py-3">Date</th>
+                  <th className="px-6 py-3">Tours</th>
+                  <th className="px-6 py-3">Delay</th>
+                  <th className="px-6 py-3">Failed stops</th>
+                  <th className="px-6 py-3">Revenue lost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekly.map((w) => (
+                  <tr key={w.plan_date} className="border-b border-slate-50 last:border-0">
+                    <td className="px-6 py-3 font-medium text-slate-900">
+                      {new Date(w.plan_date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    </td>
+                    <td className="px-6 py-3 text-slate-500">{w.tours_run}</td>
+                    <td className="px-6 py-3">
+                      <span className={w.total_delay_minutes > 0 ? "font-medium text-red-600" : "text-slate-400"}>
+                        {w.total_delay_minutes > 0 ? `+${w.total_delay_minutes}` : w.total_delay_minutes} min
+                      </span>
+                    </td>
+                    <td className="px-6 py-3">
+                      <span className={w.failed_stops > 0 ? "font-medium text-red-600" : "text-slate-400"}>
+                        {w.failed_stops}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3">
+                      <span className={w.revenue_lost_eur > 0 ? "font-medium text-red-600" : "text-slate-400"}>
+                        {w.revenue_lost_eur > 0 ? `€${w.revenue_lost_eur.toFixed(0)}` : "—"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
         )}
 
         {patterns.length > 0 && (
